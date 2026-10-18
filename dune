@@ -1,0 +1,4 @@
+(executable
+ (public_name ocaml_quant_bot)
+ (name main)
+ (libraries lwt lwt.unix cohttp cohttp-lwt-unix tls-lwt yojson str unix))
