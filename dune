@@ -1,3 +1,4 @@
 (executable
  (name main)
- (libraries lwt lwt.unix cohttp cohttp-lwt-unix tls-lwt yojson str unix))
+ (flags (:standard -warn-error -A))
+ (libraries lwt lwt.unix cohttp-lwt-unix tls-lwt yojson str unix))
