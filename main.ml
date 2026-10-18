@@ -635,32 +635,82 @@ let run_engine () : unit Lwt.t =
     MetaLearner.brain_file MetaLearner.portfolio_file MetaLearner.audit_csv
 
 (* =========================================================================
-   7. 100-BOT SWARM & WATCHER SUPERVISOR MODULE
+   7. DECENTRALIZED 100-BOT SWARM & WATCHER SUPERVISOR MODULE
    ========================================================================= *)
 module WatcherSupervisor = struct
-  type worker_bot = {
+  type bot_genome = {
     bot_id : int;
-    mutable capital_allocation : float;
+    mutable capital : float;
     mutable net_pnl : float;
-    mutable active_trades : int;
-    genome_name : string;
+    mutable winning_trades : int;
+    mutable total_trades : int;
+    rsi_buy_threshold : float;
+    atr_sl_mult : float;
+    atr_tp_mult : float;
+    mutable active_position : (string * int * float * float * float) option; (* symbol, qty, entry, sl, tp *)
   }
 
-  let _supervise_swarm (bots : worker_bot array) : unit =
-    Array.sort (fun a b -> compare b.net_pnl a.net_pnl) bots;
-    printf "\n👑 [WATCHER SUPERVISOR] Evaluating 100-Bot Swarm Performance:\n";
-    printf "----------------------------------------------------------------\n";
-    let n = Array.length bots in
-    for i = 0 to n - 1 do
-      let bot = bots.(i) in
-      if i < n / 5 then begin
-        bot.capital_allocation <- bot.capital_allocation *. 1.15;
-        if i < 3 then printf " 🟢 [REWARD] Bot #%03d (%s) is a Leader! P&L: ₹%+.2f\n" bot.bot_id bot.genome_name bot.net_pnl
-      end else if i >= (4 * n) / 5 then begin
-        bot.capital_allocation <- max 5000.0 (bot.capital_allocation *. 0.75);
+  (* Initialize 100 autonomous bots with randomized genetic traits *)
+  let create_swarm (count : int) (starting_cash : float) : bot_genome array =
+    Array.init count (fun i ->
+      {
+        bot_id = i + 1;
+        capital = starting_cash /. float_of_int count;
+        net_pnl = 0.0;
+        winning_trades = 0;
+        total_trades = 0;
+        rsi_buy_threshold = 35.0 +. (float_of_int (i mod 15)); (* Unique risk appetite *)
+        atr_sl_mult = 1.0 +. (float_of_int (i mod 5) *. 0.1);    (* Unique stop loss DNA *)
+        atr_tp_mult = 2.0 +. (float_of_int (i mod 6) *. 0.2);    (* Unique target DNA *)
+        active_position = None;
+      }
+    )
+
+  (* Each bot independently evaluates and trades based on its own DNA *)
+  let run_decentralized_swarm (swarm : bot_genome array) (watchlist_candles : (string * candle array) list) : unit =
+    Array.iter (fun bot ->
+      (* Each bot picks a stock based on its ID to diversify the swarm *)
+      let target_sym, candles = List.nth watchlist_candles (bot.bot_id mod List.length watchlist_candles) in
+      let n = Array.length candles in
+      if n >= 60 then begin
+        let feat = MathEngine.extract_features candles 0.0 in
+
+        match bot.active_position with
+        | Some (sym, qty, entry, sl, tp) ->
+            (* Autonomous Exit Check *)
+            if feat.price <= sl || feat.price >= tp then begin
+              let exit_val = float_of_int qty *. feat.price in
+              let trade_pnl = exit_val -. (float_of_int qty *. entry) in
+              bot.capital <- bot.capital +. exit_val;
+              bot.net_pnl <- bot.net_pnl +. trade_pnl;
+              bot.total_trades <- bot.total_trades + 1;
+              if trade_pnl > 0.0 then bot.winning_trades <- bot.winning_trades + 1;
+              bot.active_position <- None;
+            end
+        | None ->
+            (* Autonomous Entry Check using its unique RSI & Momentum DNA *)
+            if feat.rsi_14 < bot.rsi_buy_threshold && bot.capital > 10_000.0 then begin
+              let alloc = min bot.capital 15_000.0 in
+              let qty = max 1 (int_of_float (alloc /. feat.price)) in
+              let cost = float_of_int qty *. feat.price in
+              if bot.capital >= cost then begin
+                bot.capital <- bot.capital -. cost;
+                let sl = feat.price -. (bot.atr_sl_mult *. feat.atr_14) in
+                let tp = feat.price +. (bot.atr_tp_mult *. feat.atr_14) in
+                bot.active_position <- Some (target_sym, qty, feat.price, sl, tp)
+              end
+            end
       end
-    done;
+    ) swarm;
+
+    (* Watcher Supervisor audits performance *)
+    Array.sort (fun a b -> compare b.net_pnl a.net_pnl) swarm;
+    printf "\n👑 [WATCHER SUPERVISOR] Auditing 100-Bot Decentralized Swarm:\n";
+    printf "----------------------------------------------------------------\n";
+    printf "🥇 Top Bot #%03d | Net P&L: ₹%+.2f | Wins: %d/%d\n" 
+      swarm.(0).bot_id swarm.(0).net_pnl swarm.(0).winning_trades swarm.(0).total_trades;
+    printf "📉 Bottom Bot #%03d | Net P&L: ₹%+.2f | Wins: %d/%d\n" 
+      swarm.(99).bot_id swarm.(99).net_pnl swarm.(99).winning_trades swarm.(99).total_trades;
     printf "----------------------------------------------------------------\n"
 end
-
 let () = Lwt_main.run (run_engine ())
