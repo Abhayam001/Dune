@@ -523,6 +523,7 @@ let pretrain_symbol (ensemble : Strategies.expert array) (sym : string) : unit L
   end else
     printf " -> [Warning] Could not fetch sufficient 5Y bars for %s\n" sym
 
+
 (* -------------------------------------------------------------------------
    7. CONSCIOUS QUANT SWARM & AUTONOMOUS LITERATURE COGNITION
    ------------------------------------------------------------------------- *)
@@ -533,15 +534,22 @@ module ConsciousSwarm = struct
     | TurtleBreakout
     | FreeWill
 
+  let doctrine_name = function
+    | DualMomentum -> "DualMomentum"
+    | BollingerBands -> "BollingerBands"
+    | TurtleBreakout -> "TurtleBreakout"
+    | FreeWill -> "FreeWill"
+
   type conscious_bot = {
     bot_id : int;
     mutable cash : float;
     mutable net_pnl : float;
     mutable winning_trades : int;
     mutable total_trades : int;
+    mutable taxes_paid : float;
     mutable wisdom_score : float;
     mutable preferred_doctrine : literary_doctrine;
-    mutable active_position : (string * int * float * float * float) option;
+    mutable active_position : (string * int * float * float * float * float) option; (* sym, qty, entry, sl, tp, entry_tax *)
   }
 
   let create_conscious_swarm (count : int) (starting_cash : float) : conscious_bot array =
@@ -558,50 +566,73 @@ module ConsciousSwarm = struct
         net_pnl = 0.0;
         winning_trades = 0;
         total_trades = 0;
+        taxes_paid = 0.0;
         wisdom_score = 10.0;
         preferred_doctrine = doctrine;
         active_position = None;
       }
     )
 
-  let awaken_and_decide (bot : conscious_bot) (market_context : feature_vector) (sym : string) : unit =
-    (* Autonomous choice: decide whether to keep book doctrine or use free will *)
-    let mutiny_factor = (Int.abs (Hashtbl.hash (bot.bot_id, int_of_float market_context.price))) mod 10 in
-    if mutiny_factor < 2 then bot.preferred_doctrine <- FreeWill;
+  let awaken_and_decide (bot : conscious_bot) (market_context : feature_vector) (sym : string) (consensus : float) : unit =
+    (* Autonomous consciousness: decide whether to follow book doctrine, ensemble consensus, or free will *)
+    let state_hash = Int.abs (Hashtbl.hash (bot.bot_id, int_of_float (market_context.price *. 100.0))) in
+    if state_hash mod 10 < 2 then
+      bot.preferred_doctrine <- FreeWill
+    else if bot.wisdom_score < 8.0 && state_hash mod 3 = 0 then
+      (* If losing wisdom, bot consciously switches book doctrine to adapt *)
+      bot.preferred_doctrine <- (match bot.preferred_doctrine with
+        | DualMomentum -> BollingerBands
+        | BollingerBands -> TurtleBreakout
+        | TurtleBreakout -> DualMomentum
+        | FreeWill -> DualMomentum);
 
     match bot.active_position with
-    | Some (_s, qty, entry, sl, tp) ->
+    | Some (_s, qty, entry, sl, tp, entry_tax) ->
         if market_context.price <= sl || market_context.price >= tp || market_context.rsi_14 > 78.0 then begin
-          let exit_value = float_of_int qty *. market_context.price in
-          let pnl = exit_value -. (float_of_int qty *. entry) in
-          bot.cash <- bot.cash +. exit_value;
-          bot.net_pnl <- bot.net_pnl +. pnl;
+          let fill_exit = AngelOneFriction.apply_slippage market_context.price qty false in
+          let exit_tax = AngelOneFriction.calculate_charges fill_exit qty false in
+          let total_tax = entry_tax +. exit_tax in
+          let gross_pnl = (fill_exit -. entry) *. float_of_int qty in
+          let net_pnl = gross_pnl -. total_tax in
+
+          bot.cash <- bot.cash +. (float_of_int qty *. fill_exit) -. exit_tax;
+          bot.net_pnl <- bot.net_pnl +. net_pnl;
+          bot.taxes_paid <- bot.taxes_paid +. exit_tax;
           bot.total_trades <- bot.total_trades + 1;
-          if pnl > 0.0 then begin
+
+          if net_pnl > 0.0 then begin
             bot.winning_trades <- bot.winning_trades + 1;
             bot.wisdom_score <- bot.wisdom_score +. 1.5
           end else begin
-            bot.wisdom_score <- max 0.0 (bot.wisdom_score -. 1.0)
+            bot.wisdom_score <- max 1.0 (bot.wisdom_score -. 1.0)
           end;
           bot.active_position <- None;
+          if bot.bot_id <= 5 then
+            MetaLearner.append_csv_audit (sprintf "BOT%03d_EXIT_%s" bot.bot_id (doctrine_name bot.preferred_doctrine)) sym qty fill_exit total_tax net_pnl bot.cash
         end
     | None ->
         let should_buy = match bot.preferred_doctrine with
           | DualMomentum -> market_context.ema_9 > market_context.ema_21 && market_context.rsi_14 > 52.0
-          | BollingerBands -> market_context.z_score < -1.5 && market_context.rsi_14 < 35.0
+          | BollingerBands -> market_context.z_score < -1.5 && market_context.rsi_14 < 38.0
           | TurtleBreakout -> market_context.vol_spike > 1.3 && market_context.price > market_context.bb_upper
-          | FreeWill -> market_context.z_score < -2.0 || market_context.macro_sentiment > 0.15
+          | FreeWill -> (market_context.z_score < -1.8 && consensus > 0.0) || (market_context.macro_sentiment > 0.15 && consensus > 0.10)
         in
 
-        if should_buy && bot.cash > 8_000.0 then begin
-          let alloc = min bot.cash 10_000.0 in
+        if should_buy && bot.cash > 4_000.0 then begin
+          let alloc = min bot.cash 4_800.0 in
           let qty = max 1 (int_of_float (alloc /. market_context.price)) in
-          let cost = float_of_int qty *. market_context.price in
-          if bot.cash >= cost then begin
-            bot.cash <- bot.cash -. cost;
-            let sl = market_context.price -. (1.5 *. market_context.atr_14) in
-            let tp = market_context.price +. (2.5 *. market_context.atr_14) in
-            bot.active_position <- Some (sym, qty, market_context.price, sl, tp)
+          let fill_entry = AngelOneFriction.apply_slippage market_context.price qty true in
+          let buy_tax = AngelOneFriction.calculate_charges fill_entry qty true in
+          let total_debit = (float_of_int qty *. fill_entry) +. buy_tax in
+
+          if bot.cash >= total_debit then begin
+            bot.cash <- bot.cash -. total_debit;
+            bot.taxes_paid <- bot.taxes_paid +. buy_tax;
+            let sl = fill_entry -. (1.5 *. market_context.atr_14) in
+            let tp = fill_entry +. (2.5 *. market_context.atr_14) in
+            bot.active_position <- Some (sym, qty, fill_entry, sl, tp, buy_tax);
+            if bot.bot_id <= 5 then
+              MetaLearner.append_csv_audit (sprintf "BOT%03d_BUY_%s" bot.bot_id (doctrine_name bot.preferred_doctrine)) sym qty fill_entry buy_tax 0.0 bot.cash
           end
         end
 end
@@ -631,31 +662,32 @@ let run_engine () : unit Lwt.t =
   LiveFeeds.fetch_global_macro_score () >>= fun macro_cue ->
   printf "\n🌍 [GLOBAL MACRO CUE]: %+.3f\n\n" macro_cue;
 
-  (* Fetch candles for all watchlist symbols concurrently *)
   Lwt_list.iter_s (fun sym ->
     LiveFeeds.fetch_nse_candles sym "6mo" >>= fun candles ->
     let n = Array.length candles in
     if n >= 60 then begin
       LiveFeeds.fetch_live_sentiment sym macro_cue >|= fun sentiment ->
       let feat = MathEngine.extract_features candles sentiment in
-      
-      (* Distribute candles across the conscious swarm *)
+      let (consensus, _votes) = MetaLearner.predict_consensus ensemble feat in
+
+      printf "%-14s | LTP: ₹%8.2f | RSI: %4.1f | Z-Score: %+5.2f | News/Macro: %+6.3f | Ensemble: %+6.3f\n"
+        sym feat.price feat.rsi_14 feat.z_score sentiment consensus;
+
       Array.iter (fun bot ->
         let target_sym = List.nth watchlist (bot.bot_id mod List.length watchlist) in
         if target_sym = sym then
-          awaken_and_decide bot feat sym
+          awaken_and_decide bot feat sym consensus
       ) swarm
     end else Lwt.return_unit
   ) watchlist >|= fun () ->
 
-  (* Watcher Audit of Conscious Swarm *)
   Array.sort (fun a b -> compare b.wisdom_score a.wisdom_score) swarm;
   printf "\n👑 [WATCHER SUPERVISOR] Conscious Swarm Cognition Audit:\n";
   printf "----------------------------------------------------------------\n";
-  printf "🌟 Most Wise Bot #%03d | Wisdom: %.1f | Net P&L: ₹%+.2f | Wins: %d/%d\n"
-    swarm.(0).bot_id swarm.(0).wisdom_score swarm.(0).net_pnl swarm.(0).winning_trades swarm.(0).total_trades;
-  printf "🧠 Second Wise Bot #%03d | Wisdom: %.1f | Net P&L: ₹%+.2f | Wins: %d/%d\n"
-    swarm.(1).bot_id swarm.(1).wisdom_score swarm.(1).net_pnl swarm.(1).winning_trades swarm.(1).total_trades;
+  printf "🌟 #1 Wise Bot #%03d (%s) | Wisdom: %.1f | Net P&L: ₹%+.2f | Taxes: ₹%.2f\n"
+    swarm.(0).bot_id (doctrine_name swarm.(0).preferred_doctrine) swarm.(0).wisdom_score swarm.(0).net_pnl swarm.(0).taxes_paid;
+  printf "🧠 #2 Wise Bot #%03d (%s) | Wisdom: %.1f | Net P&L: ₹%+.2f | Taxes: ₹%.2f\n"
+    swarm.(1).bot_id (doctrine_name swarm.(1).preferred_doctrine) swarm.(1).wisdom_score swarm.(1).net_pnl swarm.(1).taxes_paid;
   printf "----------------------------------------------------------------\n";
 
   MetaLearner.save_brain ensemble;
@@ -663,3 +695,4 @@ let run_engine () : unit Lwt.t =
   printf "\n💾 Conscious Swarm session executed & saved successfully.\n"
 
 let () = Lwt_main.run (run_engine ())
+
