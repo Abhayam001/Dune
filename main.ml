@@ -638,11 +638,11 @@ let run_engine () : unit Lwt.t =
       let feat = MathEngine.extract_features candles sentiment in
       
       (* Distribute candles across the conscious swarm *)
-      Array.iter (fun bot ->
-        let target_sym = List.nth watchlist (bot.bot_id mod List.length watchlist) in
-        if target_sym = sym then
-          ConsciousSwarm.awaken_and_decide bot feat sym
-      ) swarm
+      Array.iter (fun (b : ConsciousSwarm.conscious_bot) ->
+  let target_sym = List.nth watchlist (b.bot_id mod List.length watchlist) in
+  if target_sym = sym then
+    ConsciousSwarm.awaken_and_decide b feat sym
+) swarm
     end else Lwt.return_unit
   ) watchlist >|= fun () ->
 
