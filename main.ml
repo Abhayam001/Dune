@@ -360,15 +360,13 @@ module MetaLearner = struct
     let exists = Sys.file_exists audit_csv in
     let oc = open_out_gen [Open_creat; Open_text; Open_append] 0o644 audit_csv in
     if not exists then
-      fprintf oc "Timestamp,Action,Symbol,Qty,FillPrice,TaxesPaid,NetPnL,VirtualCash
-";
+      fprintf oc "Timestamp,Action,Symbol,Qty,FillPrice,TaxesPaid,NetPnL,VirtualCash\n";
     let tm = Unix.gmtime (Unix.time ()) in
     let ts = sprintf "%04d-%02d-%02d %02d:%02d:%02d UTC"
       (tm.Unix.tm_year + 1900) (tm.Unix.tm_mon + 1) tm.Unix.tm_mday
       tm.Unix.tm_hour tm.Unix.tm_min tm.Unix.tm_sec
     in
-    fprintf oc "%s,%s,%s,%d,%.2f,%.2f,%.2f,%.2f
-" ts action symbol qty price taxes net_pnl cash;
+    fprintf oc "%s,%s,%s,%d,%.2f,%.2f,%.2f,%.2f\n" ts action symbol qty price taxes net_pnl cash;
     close_out oc
 
   let predict_consensus (ensemble : expert array) (features : feature_vector) : (float * (string * float) list) =
@@ -389,16 +387,19 @@ module MetaLearner = struct
     let dir = if net_ret_pct > 0.08 then 1.0 else if net_ret_pct < -0.08 then -1.0 else 0.0 in
     if dir <> 0.0 then begin
       Array.iter (fun exp ->
-       match List.assoc_opt exp.name votes with
-      | Some v when abs_float v > 0.1 ->
-          exp.total_calls <- exp.total_calls + 1;
-          let align = v *. dir in
-          if align > 0.0 then exp.correct_calls <- exp.correct_calls + 1;
-          exp.cumulative_pnl <- exp.cumulative_pnl +. (net_ret_pct *. v);
-          let reward = align *. (min 2.5 (abs_float net_ret_pct)) in
-          exp.weight <- max 0.03 (exp.weight *. Float.exp (learning_rate *. reward))
-      | _ -> ()
+        match List.assoc_opt exp.name votes with
+        | Some v when abs_float v > 0.1 ->
+            exp.total_calls <- exp.total_calls + 1;
+            let align = v *. dir in
+            if align > 0.0 then exp.correct_calls <- exp.correct_calls + 1;
+            exp.cumulative_pnl <- exp.cumulative_pnl +. (net_ret_pct *. v);
+            let reward = align *. (min 2.5 (abs_float net_ret_pct)) in
+            exp.weight <- max 0.03 (exp.weight *. Float.exp (learning_rate *. reward))
+        | _ -> ()
       ) ensemble;
+      let sum_w = Array.fold_left (fun acc e -> acc +. e.weight) 0.0 ensemble in
+      if sum_w > 0.0 then Array.iter (fun e -> e.weight <- e.weight /. sum_w) ensemble
+    end
 
   let save_brain (ensemble : expert array) : unit =
     let items =
@@ -492,26 +493,19 @@ module MetaLearner = struct
         { cash = 500_000.0; total_trades = 0; winning_trades = 0; total_taxes_paid = 0.0; positions = [] }
 
   let print_brain_state (ensemble : expert array) : unit =
-    printf "
-🧠 [META-LEARNER BRAIN STATE: STRATEGY WEIGHTS & HISTORICAL ACCURACY]
-";
-    printf "--------------------------------------------------------------------------------
-";
-    printf "%-22s | %-10s | %-16s | %-14s
-" "Strategy Archetype" "Trust Wt" "Win Accuracy" "Attrib Return";
-    printf "--------------------------------------------------------------------------------
-";
+    printf "\n🧠 [META-LEARNER BRAIN STATE: STRATEGY WEIGHTS & HISTORICAL ACCURACY]\n";
+    printf "--------------------------------------------------------------------------------\n";
+    printf "%-22s | %-10s | %-16s | %-14s\n" "Strategy Archetype" "Trust Wt" "Win Accuracy" "Attrib Return";
+    printf "--------------------------------------------------------------------------------\n";
     Array.iter (fun e ->
       let acc =
         if e.total_calls > 0 then (float_of_int e.correct_calls /. float_of_int e.total_calls) *. 100.0
         else 50.0
       in
-      printf "%-22s | %8.1f%%  | %6.1f%% (%5d) | %+11.2f%%
-"
+      printf "%-22s | %8.1f%%  | %6.1f%% (%5d) | %+11.2f%%\n"
         e.name (e.weight *. 100.0) acc e.total_calls e.cumulative_pnl
     ) ensemble;
-    printf "--------------------------------------------------------------------------------
-"
+    printf "--------------------------------------------------------------------------------\n"
 end
 
 (* -------------------------------------------------------------------------
@@ -523,14 +517,12 @@ let pretrain_symbol (ensemble : Strategies.expert array) (sym : string) : unit L
   LiveFeeds.fetch_nse_candles sym "5y" >|= fun candles ->
   let n = Array.length candles in
   if n > 80 then begin
-    printf " -> Pre-training on %-14s | Fetched %d real 5-Year NSE daily bars
-" sym n;
+    printf " -> Pre-training on %-14s | Fetched %d real 5-Year NSE daily bars\n" sym n;
     for i = 60 to n - 2 do
       let window = Array.sub candles (i - 60) 60 in
       let feat = MathEngine.extract_features window 0.0 in
       let (_, votes) = MetaLearner.predict_consensus ensemble feat in
       let next_c = candles.(i + 1).close in
-      (* Deduct 0.12% round-trip slippage + statutory taxes during 5-year training *)
       let gross_ret_pct = ((next_c -. feat.price) /. feat.price) *. 100.0 in
       let net_ret_pct =
         if gross_ret_pct > 0.0 then gross_ret_pct -. 0.12 else gross_ret_pct +. 0.12
@@ -538,27 +530,21 @@ let pretrain_symbol (ensemble : Strategies.expert array) (sym : string) : unit L
       MetaLearner.learn_from_outcome ensemble votes net_ret_pct
     done
   end else
-    printf " -> [Warning] Could not fetch sufficient 5Y bars for %s
-" sym
+    printf " -> [Warning] Could not fetch sufficient 5Y bars for %s\n" sym
 
 let run_engine () : unit Lwt.t =
-  printf "================================================================================
-";
-  printf "   OCAML LIVE NSE QUANT BOT (ANGEL ONE PAPER SIMULATOR WITH TAXES & SLIPPAGE)   
-";
-  printf "================================================================================
-";
+  printf "================================================================================\n";
+  printf "   OCAML LIVE NSE QUANT BOT (ANGEL ONE PAPER SIMULATOR WITH TAXES & SLIPPAGE)   \n";
+  printf "================================================================================\n";
 
   let ensemble = Strategies.create_ensemble () in
   let port = MetaLearner.load_portfolio () in
 
   (if MetaLearner.load_brain ensemble then begin
-     printf "✅ Loaded persistent Meta-Learner brain from %s!
-" MetaLearner.brain_file;
+     printf "✅ Loaded persistent Meta-Learner brain from %s!\n" MetaLearner.brain_file;
      Lwt.return_unit
    end else begin
-     printf "⏳ No saved brain found. Fetching 5 Years of real NSE data from Yahoo Finance...
-";
+     printf "⏳ No saved brain found. Fetching 5 Years of real NSE data from Yahoo Finance...\n";
      Lwt_list.iter_s (pretrain_symbol ensemble) watchlist
    end)
   >>= fun () ->
@@ -571,28 +557,22 @@ let run_engine () : unit Lwt.t =
       (float_of_int port.winning_trades /. float_of_int port.total_trades) *. 100.0
     else 0.0
   in
-  printf "
-🌍 [LIVE GLOBAL MACRO CUE (S&P500 / Brent Crude / USDINR)]: %+.3f
-" macro_cue;
-  printf "💼 [ANGEL ONE PAPER LEDGER] Cash: ₹%.2f | Closed Trades: %d (Win Rate: %.1f%%) | Taxes Paid: ₹%.2f
-
-"
+  printf "\n🌍 [LIVE GLOBAL MACRO CUE (S&P500 / Brent Crude / USDINR)]: %+.3f\n" macro_cue;
+  printf "💼 [ANGEL ONE PAPER LEDGER] Cash: ₹%.2f | Closed Trades: %d (Win Rate: %.1f%%) | Taxes Paid: ₹%.2f\n\n"
     port.cash port.total_trades win_rate port.total_taxes_paid;
 
   Lwt_list.iter_s (fun sym ->
     LiveFeeds.fetch_nse_candles sym "6mo" >>= fun candles ->
     let n = Array.length candles in
     if n < 60 then begin
-      printf "[%s] Skipping: Insufficient live candles (%d)
-" sym n;
+      printf "[%s] Skipping: Insufficient live candles (%d)\n" sym n;
       Lwt.return_unit
     end else begin
       LiveFeeds.fetch_live_sentiment sym macro_cue >|= fun sentiment ->
       let feat = MathEngine.extract_features candles sentiment in
       let (consensus, votes) = MetaLearner.predict_consensus ensemble feat in
 
-      printf "%-14s | LTP: ₹%8.2f | RSI: %4.1f | Z-Score: %+5.2f | News/Macro: %+6.3f | Ensemble: %+6.3f
-"
+      printf "%-14s | LTP: ₹%8.2f | RSI: %4.1f | Z-Score: %+5.2f | News/Macro: %+6.3f | Ensemble: %+6.3f\n"
         sym feat.price feat.rsi_14 feat.z_score sentiment consensus;
 
       let existing_opt = List.find_opt (fun p -> p.symbol = sym) port.positions in
@@ -614,12 +594,10 @@ let run_engine () : unit Lwt.t =
 
             MetaLearner.learn_from_outcome ensemble pos.entry_votes net_ret_pct;
             MetaLearner.append_csv_audit "EXIT_SELL" sym pos.qty fill_exit total_trade_charges net_pnl port.cash;
-            printf " 🔴 [PAPER EXIT] %s @ Fill ₹%.2f | Gross: ₹%+.2f | Taxes: ₹%.2f | Net P&L: ₹%+.2f (%+.2f%%)
-"
+            printf " 🔴 [PAPER EXIT] %s @ Fill ₹%.2f | Gross: ₹%+.2f | Taxes: ₹%.2f | Net P&L: ₹%+.2f (%+.2f%%)\n"
               sym fill_exit gross_pnl total_trade_charges net_pnl net_ret_pct
           end else
-            printf " 🔵 [HOLDING] %s (%d qty @ ₹%.2f) | Est Net Unrealized P&L: ₹%+.2f (%+.2f%%)
-"
+            printf " 🔵 [HOLDING] %s (%d qty @ ₹%.2f) | Est Net Unrealized P&L: ₹%+.2f (%+.2f%%)\n"
               sym pos.qty pos.entry_price net_pnl net_ret_pct
       | None ->
           if consensus >= 0.18 && sentiment > -0.20 && port.cash >= 65_000.0 then begin
@@ -644,8 +622,7 @@ let run_engine () : unit Lwt.t =
                 entry_votes = votes;
               } :: port.positions;
               MetaLearner.append_csv_audit "ENTRY_BUY" sym qty fill_entry buy_charges 0.0 port.cash;
-              printf " 🟢 [PAPER BUY] %d %s @ Fill ₹%.2f (Slippage incl.) | Taxes: ₹%.2f | SL: ₹%.2f | Target: ₹%.2f
-"
+              printf " 🟢 [PAPER BUY] %d %s @ Fill ₹%.2f (Slippage incl.) | Taxes: ₹%.2f | SL: ₹%.2f | Target: ₹%.2f\n"
                 qty sym fill_entry buy_charges sl target
             end
           end
@@ -654,10 +631,9 @@ let run_engine () : unit Lwt.t =
   >|= fun () ->
   MetaLearner.save_brain ensemble;
   MetaLearner.save_portfolio port;
-  printf "
-💾 Saved updated Meta-Learner weights (%s), Angel One Paper Ledger (%s), and Audit CSV (%s).
-"
+  printf "\n💾 Saved updated Meta-Learner weights (%s), Angel One Paper Ledger (%s), and Audit CSV (%s).\n"
     MetaLearner.brain_file MetaLearner.portfolio_file MetaLearner.audit_csv
+
 (* =========================================================================
    7. 100-BOT SWARM & WATCHER SUPERVISOR MODULE
    ========================================================================= *)
@@ -670,7 +646,7 @@ module WatcherSupervisor = struct
     genome_name : string;
   }
 
-  let_supervise_swarm (bots : worker_bot array) : unit =
+  let _supervise_swarm (bots : worker_bot array) : unit =
     Array.sort (fun a b -> compare b.net_pnl a.net_pnl) bots;
     printf "\n👑 [WATCHER SUPERVISOR] Evaluating 100-Bot Swarm Performance:\n";
     printf "----------------------------------------------------------------\n";
@@ -686,4 +662,5 @@ module WatcherSupervisor = struct
     done;
     printf "----------------------------------------------------------------\n"
 end
+
 let () = Lwt_main.run (run_engine ())
