@@ -1,9 +1,9 @@
 name: OCaml Live NSE Quant Bot
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Allows manual trigger from your phone anytime
   schedule:
-    - cron: '*/30 4-10 * * 1-5'
+    - cron: '30 4,6,8 * * 1-5' # Runs Mon-Fri at 10:00 AM, 12:00 PM, and 2:00 PM IST
 
 permissions:
   contents: write
