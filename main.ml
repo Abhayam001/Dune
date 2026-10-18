@@ -570,7 +570,7 @@ module ConsciousSwarm = struct
     if mutiny_factor < 2 then bot.preferred_doctrine <- FreeWill;
 
     match bot.active_position with
-    | Some (s, qty, entry, sl, tp) ->
+    | Some (_s, qty, entry, sl, tp) ->
         if market_context.price <= sl || market_context.price >= tp || market_context.rsi_14 > 78.0 then begin
           let exit_value = float_of_int qty *. market_context.price in
           let pnl = exit_value -. (float_of_int qty *. entry) in
@@ -606,6 +606,8 @@ module ConsciousSwarm = struct
         end
 end
 
+open ConsciousSwarm
+
 let run_engine () : unit Lwt.t =
   printf "================================================================================\n";
   printf "   OCAML CONSCIOUS 100-BOT SWARM QUANT ENGINE (LITERATURE + AUTONOMY)           \n";
@@ -613,7 +615,7 @@ let run_engine () : unit Lwt.t =
 
   let ensemble = Strategies.create_ensemble () in
   let port = MetaLearner.load_portfolio () in
-  let swarm = ConsciousSwarm.create_conscious_swarm 100 500_000.0 in
+  let swarm = create_conscious_swarm 100 500_000.0 in
 
   (if MetaLearner.load_brain ensemble then begin
      printf "✅ Loaded persistent Meta-Learner brain!\n";
@@ -638,11 +640,11 @@ let run_engine () : unit Lwt.t =
       let feat = MathEngine.extract_features candles sentiment in
       
       (* Distribute candles across the conscious swarm *)
-      Array.iter (fun (b : ConsciousSwarm.conscious_bot) ->
-  let target_sym = List.nth watchlist (b.bot_id mod List.length watchlist) in
-  if target_sym = sym then
-    ConsciousSwarm.awaken_and_decide b feat sym
-) swarm
+      Array.iter (fun bot ->
+        let target_sym = List.nth watchlist (bot.bot_id mod List.length watchlist) in
+        if target_sym = sym then
+          awaken_and_decide bot feat sym
+      ) swarm
     end else Lwt.return_unit
   ) watchlist >|= fun () ->
 
