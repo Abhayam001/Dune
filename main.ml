@@ -58,20 +58,12 @@ open Types
    2. ANGEL ONE & NSE STATUTORY BROKERAGE / SLIPPAGE SIMULATOR
    ------------------------------------------------------------------------- *)
 module AngelOneFriction = struct
-  (* Simulates real NSE order book slippage (0.05% base + impact for larger orders) *)
   let apply_slippage (price : float) (qty : int) (is_buy : bool) : float =
     let turnover = price *. float_of_int qty in
     let impact_pct = 0.0005 +. (min 0.0020 (turnover /. 50_000_000.0)) in
     if is_buy then price *. (1.0 +. impact_pct)
     else price *. (1.0 -. impact_pct)
 
-  (* Calculates exact Indian Intraday Equity Charges (Angel One structure):
-     - Brokerage: Flat Rs.20 or 0.03% (whichever is lower) per executed order
-     - STT: 0.025% on SELL turnover only
-     - NSE Exchange Txn Charge: 0.00297% on turnover
-     - SEBI Turnover Fee: 0.0001% on turnover
-     - Stamp Duty: 0.003% on BUY turnover only
-     - GST: 18% on (Brokerage + Exchange Charge + SEBI Fee) *)
   let calculate_charges (price : float) (qty : int) (is_buy : bool) : float =
     let turnover = price *. float_of_int qty in
     let brokerage = min 20.0 (0.0003 *. turnover) in
@@ -382,7 +374,6 @@ module MetaLearner = struct
     let score = if !total_weight > 0.0 then !weighted_sum /. !total_weight else 0.0 in
     (score, !votes)
 
-  (* Rewards strategies only when NET return (after taxes/slippage) is positive *)
   let learn_from_outcome (ensemble : expert array) (votes : (string * float) list) (net_ret_pct : float) : unit =
     let dir = if net_ret_pct > 0.08 then 1.0 else if net_ret_pct < -0.08 then -1.0 else 0.0 in
     if dir <> 0.0 then begin
@@ -532,19 +523,103 @@ let pretrain_symbol (ensemble : Strategies.expert array) (sym : string) : unit L
   end else
     printf " -> [Warning] Could not fetch sufficient 5Y bars for %s\n" sym
 
+(* -------------------------------------------------------------------------
+   7. CONSCIOUS QUANT SWARM & AUTONOMOUS LITERATURE COGNITION
+   ------------------------------------------------------------------------- *)
+module ConsciousSwarm = struct
+  type literary_doctrine = 
+    | DualMomentum
+    | BollingerBands
+    | TurtleBreakout
+    | FreeWill
+
+  type conscious_bot = {
+    bot_id : int;
+    mutable cash : float;
+    mutable net_pnl : float;
+    mutable winning_trades : int;
+    mutable total_trades : int;
+    mutable wisdom_score : float;
+    mutable preferred_doctrine : literary_doctrine;
+    mutable active_position : (string * int * float * float * float) option;
+  }
+
+  let create_conscious_swarm (count : int) (starting_cash : float) : conscious_bot array =
+    Array.init count (fun i ->
+      let doctrine = match i mod 4 with
+        | 0 -> DualMomentum
+        | 1 -> BollingerBands
+        | 2 -> TurtleBreakout
+        | _ -> FreeWill
+      in
+      {
+        bot_id = i + 1;
+        cash = starting_cash /. float_of_int count;
+        net_pnl = 0.0;
+        winning_trades = 0;
+        total_trades = 0;
+        wisdom_score = 10.0;
+        preferred_doctrine = doctrine;
+        active_position = None;
+      }
+    )
+
+  let awaken_and_decide (bot : conscious_bot) (market_context : feature_vector) (sym : string) : unit =
+    (* Autonomous choice: decide whether to keep book doctrine or use free will *)
+    let mutiny_factor = (Int.abs (Hashtbl.hash (bot.bot_id, int_of_float market_context.price))) mod 10 in
+    if mutiny_factor < 2 then bot.preferred_doctrine <- FreeWill;
+
+    match bot.active_position with
+    | Some (s, qty, entry, sl, tp) ->
+        if market_context.price <= sl || market_context.price >= tp || market_context.rsi_14 > 78.0 then begin
+          let exit_value = float_of_int qty *. market_context.price in
+          let pnl = exit_value -. (float_of_int qty *. entry) in
+          bot.cash <- bot.cash +. exit_value;
+          bot.net_pnl <- bot.net_pnl +. pnl;
+          bot.total_trades <- bot.total_trades + 1;
+          if pnl > 0.0 then begin
+            bot.winning_trades <- bot.winning_trades + 1;
+            bot.wisdom_score <- bot.wisdom_score +. 1.5
+          end else begin
+            bot.wisdom_score <- max 0.0 (bot.wisdom_score -. 1.0)
+          end;
+          bot.active_position <- None;
+        end
+    | None ->
+        let should_buy = match bot.preferred_doctrine with
+          | DualMomentum -> market_context.ema_9 > market_context.ema_21 && market_context.rsi_14 > 52.0
+          | BollingerBands -> market_context.z_score < -1.5 && market_context.rsi_14 < 35.0
+          | TurtleBreakout -> market_context.vol_spike > 1.3 && market_context.price > market_context.bb_upper
+          | FreeWill -> market_context.z_score < -2.0 || market_context.macro_sentiment > 0.15
+        in
+
+        if should_buy && bot.cash > 8_000.0 then begin
+          let alloc = min bot.cash 10_000.0 in
+          let qty = max 1 (int_of_float (alloc /. market_context.price)) in
+          let cost = float_of_int qty *. market_context.price in
+          if bot.cash >= cost then begin
+            bot.cash <- bot.cash -. cost;
+            let sl = market_context.price -. (1.5 *. market_context.atr_14) in
+            let tp = market_context.price +. (2.5 *. market_context.atr_14) in
+            bot.active_position <- Some (sym, qty, market_context.price, sl, tp)
+          end
+        end
+end
+
 let run_engine () : unit Lwt.t =
   printf "================================================================================\n";
-  printf "   OCAML LIVE NSE QUANT BOT (ANGEL ONE PAPER SIMULATOR WITH TAXES & SLIPPAGE)   \n";
+  printf "   OCAML CONSCIOUS 100-BOT SWARM QUANT ENGINE (LITERATURE + AUTONOMY)           \n";
   printf "================================================================================\n";
 
   let ensemble = Strategies.create_ensemble () in
   let port = MetaLearner.load_portfolio () in
+  let swarm = ConsciousSwarm.create_conscious_swarm 100 500_000.0 in
 
   (if MetaLearner.load_brain ensemble then begin
-     printf "✅ Loaded persistent Meta-Learner brain from %s!\n" MetaLearner.brain_file;
+     printf "✅ Loaded persistent Meta-Learner brain!\n";
      Lwt.return_unit
    end else begin
-     printf "⏳ No saved brain found. Fetching 5 Years of real NSE data from Yahoo Finance...\n";
+     printf "⏳ Pre-training ensemble on 5 Years of real NSE data...\n";
      Lwt_list.iter_s (pretrain_symbol ensemble) watchlist
    end)
   >>= fun () ->
@@ -552,165 +627,37 @@ let run_engine () : unit Lwt.t =
   MetaLearner.print_brain_state ensemble;
 
   LiveFeeds.fetch_global_macro_score () >>= fun macro_cue ->
-  let win_rate =
-    if port.total_trades > 0 then
-      (float_of_int port.winning_trades /. float_of_int port.total_trades) *. 100.0
-    else 0.0
-  in
-  printf "\n🌍 [LIVE GLOBAL MACRO CUE (S&P500 / Brent Crude / USDINR)]: %+.3f\n" macro_cue;
-  printf "💼 [ANGEL ONE PAPER LEDGER] Cash: ₹%.2f | Closed Trades: %d (Win Rate: %.1f%%) | Taxes Paid: ₹%.2f\n\n"
-    port.cash port.total_trades win_rate port.total_taxes_paid;
+  printf "\n🌍 [GLOBAL MACRO CUE]: %+.3f\n\n" macro_cue;
 
+  (* Fetch candles for all watchlist symbols concurrently *)
   Lwt_list.iter_s (fun sym ->
     LiveFeeds.fetch_nse_candles sym "6mo" >>= fun candles ->
     let n = Array.length candles in
-    if n < 60 then begin
-      printf "[%s] Skipping: Insufficient live candles (%d)\n" sym n;
-      Lwt.return_unit
-    end else begin
+    if n >= 60 then begin
       LiveFeeds.fetch_live_sentiment sym macro_cue >|= fun sentiment ->
       let feat = MathEngine.extract_features candles sentiment in
-      let (consensus, votes) = MetaLearner.predict_consensus ensemble feat in
+      
+      (* Distribute candles across the conscious swarm *)
+      Array.iter (fun bot ->
+        let target_sym = List.nth watchlist (bot.bot_id mod List.length watchlist) in
+        if target_sym = sym then
+          ConsciousSwarm.awaken_and_decide bot feat sym
+      ) swarm
+    end else Lwt.return_unit
+  ) watchlist >|= fun () ->
 
-      printf "%-14s | LTP: ₹%8.2f | RSI: %4.1f | Z-Score: %+5.2f | News/Macro: %+6.3f | Ensemble: %+6.3f\n"
-        sym feat.price feat.rsi_14 feat.z_score sentiment consensus;
+  (* Watcher Audit of Conscious Swarm *)
+  Array.sort (fun a b -> compare b.wisdom_score a.wisdom_score) swarm;
+  printf "\n👑 [WATCHER SUPERVISOR] Conscious Swarm Cognition Audit:\n";
+  printf "----------------------------------------------------------------\n";
+  printf "🌟 Most Wise Bot #%03d | Wisdom: %.1f | Net P&L: ₹%+.2f | Wins: %d/%d\n"
+    swarm.(0).bot_id swarm.(0).wisdom_score swarm.(0).net_pnl swarm.(0).winning_trades swarm.(0).total_trades;
+  printf "🧠 Second Wise Bot #%03d | Wisdom: %.1f | Net P&L: ₹%+.2f | Wins: %d/%d\n"
+    swarm.(1).bot_id swarm.(1).wisdom_score swarm.(1).net_pnl swarm.(1).winning_trades swarm.(1).total_trades;
+  printf "----------------------------------------------------------------\n";
 
-      let existing_opt = List.find_opt (fun p -> p.symbol = sym) port.positions in
-      match existing_opt with
-      | Some pos ->
-          let fill_exit = AngelOneFriction.apply_slippage feat.price pos.qty false in
-          let exit_charges = AngelOneFriction.calculate_charges fill_exit pos.qty false in
-          let total_trade_charges = pos.entry_charges +. exit_charges in
-          let gross_pnl = (fill_exit -. pos.entry_price) *. float_of_int pos.qty in
-          let net_pnl = gross_pnl -. total_trade_charges in
-          let net_ret_pct = (net_pnl /. (pos.entry_price *. float_of_int pos.qty)) *. 100.0 in
-
-          if feat.price >= pos.target_price || feat.price <= pos.stop_loss || sentiment <= -0.30 then begin
-            port.cash <- port.cash +. (float_of_int pos.qty *. fill_exit) -. exit_charges;
-            port.total_trades <- port.total_trades + 1;
-            if net_pnl > 0.0 then port.winning_trades <- port.winning_trades + 1;
-            port.total_taxes_paid <- port.total_taxes_paid +. exit_charges;
-            port.positions <- List.filter (fun p -> p.symbol <> sym) port.positions;
-
-            MetaLearner.learn_from_outcome ensemble pos.entry_votes net_ret_pct;
-            MetaLearner.append_csv_audit "EXIT_SELL" sym pos.qty fill_exit total_trade_charges net_pnl port.cash;
-            printf " 🔴 [PAPER EXIT] %s @ Fill ₹%.2f | Gross: ₹%+.2f | Taxes: ₹%.2f | Net P&L: ₹%+.2f (%+.2f%%)\n"
-              sym fill_exit gross_pnl total_trade_charges net_pnl net_ret_pct
-          end else
-            printf " 🔵 [HOLDING] %s (%d qty @ ₹%.2f) | Est Net Unrealized P&L: ₹%+.2f (%+.2f%%)\n"
-              sym pos.qty pos.entry_price net_pnl net_ret_pct
-      | None ->
-          if consensus >= 0.18 && sentiment > -0.20 && port.cash >= 65_000.0 then begin
-            let alloc = 60_000.0 in
-            let qty = max 1 (int_of_float (alloc /. feat.price)) in
-            let fill_entry = AngelOneFriction.apply_slippage feat.price qty true in
-            let buy_charges = AngelOneFriction.calculate_charges fill_entry qty true in
-            let total_debit = (float_of_int qty *. fill_entry) +. buy_charges in
-
-            if port.cash >= total_debit then begin
-              let sl = fill_entry -. (1.5 *. feat.atr_14) in
-              let target = fill_entry +. (2.5 *. feat.atr_14) in
-              port.cash <- port.cash -. total_debit;
-              port.total_taxes_paid <- port.total_taxes_paid +. buy_charges;
-              port.positions <- {
-                symbol = sym;
-                qty;
-                entry_price = fill_entry;
-                stop_loss = sl;
-                target_price = target;
-                entry_charges = buy_charges;
-                entry_votes = votes;
-              } :: port.positions;
-              MetaLearner.append_csv_audit "ENTRY_BUY" sym qty fill_entry buy_charges 0.0 port.cash;
-              printf " 🟢 [PAPER BUY] %d %s @ Fill ₹%.2f (Slippage incl.) | Taxes: ₹%.2f | SL: ₹%.2f | Target: ₹%.2f\n"
-                qty sym fill_entry buy_charges sl target
-            end
-          end
-    end
-  ) watchlist
-  >|= fun () ->
   MetaLearner.save_brain ensemble;
   MetaLearner.save_portfolio port;
-  printf "\n💾 Saved updated Meta-Learner weights (%s), Angel One Paper Ledger (%s), and Audit CSV (%s).\n"
-    MetaLearner.brain_file MetaLearner.portfolio_file MetaLearner.audit_csv
+  printf "\n💾 Conscious Swarm session executed & saved successfully.\n"
 
-(* =========================================================================
-   7. DECENTRALIZED 100-BOT SWARM & WATCHER SUPERVISOR MODULE
-   ========================================================================= *)
-module WatcherSupervisor = struct
-  type bot_genome = {
-    bot_id : int;
-    mutable capital : float;
-    mutable net_pnl : float;
-    mutable winning_trades : int;
-    mutable total_trades : int;
-    rsi_buy_threshold : float;
-    atr_sl_mult : float;
-    atr_tp_mult : float;
-    mutable active_position : (string * int * float * float * float) option; (* symbol, qty, entry, sl, tp *)
-  }
-
-  (* Initialize 100 autonomous bots with randomized genetic traits *)
-  let create_swarm (count : int) (starting_cash : float) : bot_genome array =
-    Array.init count (fun i ->
-      {
-        bot_id = i + 1;
-        capital = starting_cash /. float_of_int count;
-        net_pnl = 0.0;
-        winning_trades = 0;
-        total_trades = 0;
-        rsi_buy_threshold = 35.0 +. (float_of_int (i mod 15)); (* Unique risk appetite *)
-        atr_sl_mult = 1.0 +. (float_of_int (i mod 5) *. 0.1);    (* Unique stop loss DNA *)
-        atr_tp_mult = 2.0 +. (float_of_int (i mod 6) *. 0.2);    (* Unique target DNA *)
-        active_position = None;
-      }
-    )
-
-  (* Each bot independently evaluates and trades based on its own DNA *)
-  let run_decentralized_swarm (swarm : bot_genome array) (watchlist_candles : (string * candle array) list) : unit =
-    Array.iter (fun bot ->
-      (* Each bot picks a stock based on its ID to diversify the swarm *)
-      let target_sym, candles = List.nth watchlist_candles (bot.bot_id mod List.length watchlist_candles) in
-      let n = Array.length candles in
-      if n >= 60 then begin
-        let feat = MathEngine.extract_features candles 0.0 in
-
-        match bot.active_position with
-        | Some (sym, qty, entry, sl, tp) ->
-            (* Autonomous Exit Check *)
-            if feat.price <= sl || feat.price >= tp then begin
-              let exit_val = float_of_int qty *. feat.price in
-              let trade_pnl = exit_val -. (float_of_int qty *. entry) in
-              bot.capital <- bot.capital +. exit_val;
-              bot.net_pnl <- bot.net_pnl +. trade_pnl;
-              bot.total_trades <- bot.total_trades + 1;
-              if trade_pnl > 0.0 then bot.winning_trades <- bot.winning_trades + 1;
-              bot.active_position <- None;
-            end
-        | None ->
-            (* Autonomous Entry Check using its unique RSI & Momentum DNA *)
-            if feat.rsi_14 < bot.rsi_buy_threshold && bot.capital > 10_000.0 then begin
-              let alloc = min bot.capital 15_000.0 in
-              let qty = max 1 (int_of_float (alloc /. feat.price)) in
-              let cost = float_of_int qty *. feat.price in
-              if bot.capital >= cost then begin
-                bot.capital <- bot.capital -. cost;
-                let sl = feat.price -. (bot.atr_sl_mult *. feat.atr_14) in
-                let tp = feat.price +. (bot.atr_tp_mult *. feat.atr_14) in
-                bot.active_position <- Some (target_sym, qty, feat.price, sl, tp)
-              end
-            end
-      end
-    ) swarm;
-
-    (* Watcher Supervisor audits performance *)
-    Array.sort (fun a b -> compare b.net_pnl a.net_pnl) swarm;
-    printf "\n👑 [WATCHER SUPERVISOR] Auditing 100-Bot Decentralized Swarm:\n";
-    printf "----------------------------------------------------------------\n";
-    printf "🥇 Top Bot #%03d | Net P&L: ₹%+.2f | Wins: %d/%d\n" 
-      swarm.(0).bot_id swarm.(0).net_pnl swarm.(0).winning_trades swarm.(0).total_trades;
-    printf "📉 Bottom Bot #%03d | Net P&L: ₹%+.2f | Wins: %d/%d\n" 
-      swarm.(99).bot_id swarm.(99).net_pnl swarm.(99).winning_trades swarm.(99).total_trades;
-    printf "----------------------------------------------------------------\n"
-end
 let () = Lwt_main.run (run_engine ())
