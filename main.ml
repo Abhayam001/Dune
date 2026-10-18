@@ -660,5 +660,32 @@ let run_engine () : unit Lwt.t =
 💾 Saved updated Meta-Learner weights (%s), Angel One Paper Ledger (%s), and Audit CSV (%s).
 "
     MetaLearner.brain_file MetaLearner.portfolio_file MetaLearner.audit_csv
+(* =========================================================================
+   7. 100-BOT SWARM & WATCHER SUPERVISOR MODULE
+   ========================================================================= *)
+module WatcherSupervisor = struct
+  type worker_bot = {
+    bot_id : int;
+    mutable capital_allocation : float;
+    mutable net_pnl : float;
+    mutable active_trades : int;
+    genome_name : string;
+  }
 
+  let supervise_swarm (bots : worker_bot array) : unit =
+    Array.sort (fun a b -> compare b.net_pnl a.net_pnl) bots;
+    printf "\n👑 [WATCHER SUPERVISOR] Evaluating 100-Bot Swarm Performance:\n";
+    printf "----------------------------------------------------------------\n";
+    let n = Array.length bots in
+    for i = 0 to n - 1 do
+      let bot = bots.(i) in
+      if i < n / 5 then begin
+        bot.capital_allocation <- bot.capital_allocation *. 1.15;
+        if i < 3 then printf " 🟢 [REWARD] Bot #%03d (%s) is a Leader! P&L: ₹%+.2f\n" bot.bot_id bot.genome_name bot.net_pnl
+      end else if i >= (4 * n) / 5 then begin
+        bot.capital_allocation <- max 5000.0 (bot.capital_allocation *. 0.75);
+      end
+    done;
+    printf "----------------------------------------------------------------\n"
+end
 let () = Lwt_main.run (run_engine ())
