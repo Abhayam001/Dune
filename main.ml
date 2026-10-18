@@ -18,7 +18,7 @@ module Types = struct
     close : float;
     volume : float;
   }
-
+x
   type feature_vector = {
     price : float;
     ema_9 : float;
@@ -396,8 +396,7 @@ module MetaLearner = struct
             if align > 0.0 then exp.correct_calls <- exp.correct_calls + 1;
             exp.cumulative_pnl <- exp.cumulative_pnl +. (net_ret_pct *. v);
             let reward = align *. (min 2.5 (abs_float net_ret_pct)) in
-            exp.weight <- max 0.03 (exp.weight *. exp (learning_rate *. reward))
-        | _ -> ()
+            exp.weight <- max 0.03 (exp.weight *. Float.exp (learning_rate *. reward))
       ) ensemble;
       let sum_w = Array.fold_left (fun acc e -> acc +. e.weight) 0.0 ensemble in
       if sum_w > 0.0 then Array.iter (fun e -> e.weight <- e.weight /. sum_w) ensemble
