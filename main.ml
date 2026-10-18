@@ -136,17 +136,6 @@ module MathEngine = struct
       in
       sqrt (max 1e-9 variance)
 
-  let ema (prices : float array) (period : int) : float =
-    let n = Array.length prices in
-    if n = 0 then 0.0
-    else
-      let alpha = 2.0 /. float_of_int (period + 1) in
-      let acc = ref prices.(0) in
-      for i = 1 to n - 1 do
-        acc := (alpha *. prices.(i)) +. ((1.0 -. alpha) *. !acc)
-      done;
-      !acc
-
   let rsi (prices : float array) (period : int) : float =
     let n = Array.length prices in
     if n <= period then 50.0
@@ -163,50 +152,36 @@ module MathEngine = struct
       if avg_loss < 1e-9 then 100.0
       else
         let rs = avg_gain /. avg_loss in
-        100.0 -. (100.0 /. (1.0 +. rs))
-
-  let atr (candles : candle array) (period : int) : float =
-    let n = Array.length candles in
-    if n <= period then 1.0
-    else
-      let sum_tr = ref 0.0 in
-      for i = n - period to n - 1 do
-        let c = candles.(i) in
-        let prev_c = candles.(i - 1).close in
-        let tr1 = c.high -. c.low in
-        let tr2 = abs_float (c.high -. prev_c) in
-        let tr3 = abs_float (c.low -. prev_c) in
-        sum_tr := !sum_tr +. max tr1 (max tr2 tr3)
-      done;
-      !sum_tr /. float_of_int period
+        let raw_rsi = 100.0 -. (100.0 /. (1.0 +. rs)) in
+        if Float.is_nan raw_rsi then 50.0 else max 0.0 (min 100.0 raw_rsi)
 
   let extract_features (candles : candle array) (macro_sentiment : float) : feature_vector =
     let n = Array.length candles in
-    let closes = Array.map (fun c -> c.close) candles in
-    let volumes = Array.map (fun c -> c.volume) candles in
-    let last_close = closes.(n - 1) in
-
-    let recent_20 = if n >= 20 then Array.sub closes (n - 20) 20 else closes in
-    let recent_vol_20 = if n >= 20 then Array.sub volumes (n - 20) 20 else volumes in
-
-    let sma_20 = mean recent_20 in
-    let sd_20 = std_dev recent_20 in
-    let avg_vol = max 1.0 (mean recent_vol_20) in
-
-    {
-      price = last_close;
-      ema_9 = ema closes 9;
-      ema_21 = ema closes 21;
-      ema_50 = ema closes 50;
-      rsi_14 = rsi closes 14;
-      atr_14 = atr candles 14;
-      bb_upper = sma_20 +. (2.0 *. sd_20);
-      bb_lower = sma_20 -. (2.0 *. sd_20);
-      z_score = (last_close -. sma_20) /. sd_20;
-      vol_spike = volumes.(n - 1) /. avg_vol;
-      macro_sentiment;
-    }
+    if n < 20 then
+      { price = 100.0; ema_9 = 100.0; ema_21 = 100.0; ema_50 = 100.0; rsi_14 = 50.0; atr_14 = 1.0; bb_upper = 105.0; bb_lower = 95.0; z_score = 0.0; vol_spike = 1.0; macro_sentiment }
+    else
+      let closes = Array.map (fun c -> c.close) candles in
+      let volumes = Array.map (fun c -> c.volume) candles in
+      let last_close = closes.(n - 1) in
+      let recent_20 = Array.sub closes (n - 20) 20 in
+      let sma_20 = mean recent_20 in
+      let sd_20 = std_dev recent_20 in
+      let z = if sd_20 < 1e-9 then 0.0 else (last_close -. sma_20) /. sd_20 in
+      {
+        price = last_close;
+        ema_9 = ema closes 9;
+        ema_21 = ema closes 21;
+        ema_50 = ema closes 50;
+        rsi_14 = rsi closes 14;
+        atr_14 = atr candles 14;
+        bb_upper = sma_20 +. (2.0 *. sd_20);
+        bb_lower = sma_20 -. (2.0 *. sd_20);
+        z_score = if Float.is_nan z then 0.0 else z;
+        vol_spike = volumes.(n - 1) /. max 1.0 (mean (Array.sub volumes (n - 20) 20));
+        macro_sentiment;
+      }
 end
+
 
 (* -------------------------------------------------------------------------
    4. LIVE HTTP DATA INGESTION (COHTTP + YOJSON + RSS NLP)
