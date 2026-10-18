@@ -389,18 +389,16 @@ module MetaLearner = struct
     let dir = if net_ret_pct > 0.08 then 1.0 else if net_ret_pct < -0.08 then -1.0 else 0.0 in
     if dir <> 0.0 then begin
       Array.iter (fun exp ->
-        match List.assoc_opt exp.name votes with
-        | Some v when abs_float v > 0.1 ->
-            exp.total_calls <- exp.total_calls + 1;
-            let align = v *. dir in
-            if align > 0.0 then exp.correct_calls <- exp.correct_calls + 1;
-            exp.cumulative_pnl <- exp.cumulative_pnl +. (net_ret_pct *. v);
-            let reward = align *. (min 2.5 (abs_float net_ret_pct)) in
-            exp.weight <- max 0.03 (exp.weight *. Float.exp (learning_rate *. reward))
+       match List.assoc_opt exp.name votes with
+      | Some v when abs_float v > 0.1 ->
+          exp.total_calls <- exp.total_calls + 1;
+          let align = v *. dir in
+          if align > 0.0 then exp.correct_calls <- exp.correct_calls + 1;
+          exp.cumulative_pnl <- exp.cumulative_pnl +. (net_ret_pct *. v);
+          let reward = align *. (min 2.5 (abs_float net_ret_pct)) in
+          exp.weight <- max 0.03 (exp.weight *. Float.exp (learning_rate *. reward))
+      | _ -> ()
       ) ensemble;
-      let sum_w = Array.fold_left (fun acc e -> acc +. e.weight) 0.0 ensemble in
-      if sum_w > 0.0 then Array.iter (fun e -> e.weight <- e.weight /. sum_w) ensemble
-    end
 
   let save_brain (ensemble : expert array) : unit =
     let items =
@@ -672,7 +670,7 @@ module WatcherSupervisor = struct
     genome_name : string;
   }
 
-  let supervise_swarm (bots : worker_bot array) : unit =
+  let_supervise_swarm (bots : worker_bot array) : unit =
     Array.sort (fun a b -> compare b.net_pnl a.net_pnl) bots;
     printf "\n👑 [WATCHER SUPERVISOR] Evaluating 100-Bot Swarm Performance:\n";
     printf "----------------------------------------------------------------\n";
