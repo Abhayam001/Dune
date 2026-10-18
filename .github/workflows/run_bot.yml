@@ -1,0 +1,38 @@
+name: OCaml Live NSE Quant Bot
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/30 4-10 * * 1-5'
+
+permissions:
+  contents: write
+
+jobs:
+  quant-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup OCaml & Quant Libraries
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.2.x
+
+      - name: Install System TLS & Opam Dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libgmp-dev libssl-dev pkg-config
+          opam install -y dune lwt cohttp-lwt-unix tls-lwt yojson
+
+      - name: Compile & Run Live NSE Quant Engine
+        run: opam exec -- dune exec ./main.exe
+
+      - name: Save Brain & Paper Ledger to Repository
+        run: |
+          git config user.name "OCaml-Quant-Bot"
+          git config user.email "quant-bot@users.noreply.github.com"
+          git add brain_state.json paper_portfolio.json paper_trades_audit.csv || true
+          git diff --staged --quiet || git commit -m "chore(brain): update learned weights and Angel One paper ledger"
+          git push
