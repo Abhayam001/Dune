@@ -18,7 +18,7 @@ module Types = struct
     close : float;
     volume : float;
   }
-x
+
   type feature_vector = {
     price : float;
     ema_9 : float;
