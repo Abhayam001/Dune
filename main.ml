@@ -136,6 +136,17 @@ module MathEngine = struct
       in
       sqrt (max 1e-9 variance)
 
+  let ema (prices : float array) (period : int) : float =
+    let n = Array.length prices in
+    if n = 0 then 0.0
+    else
+      let alpha = 2.0 /. float_of_int (period + 1) in
+      let acc = ref prices.(0) in
+      for i = 1 to n - 1 do
+        acc := (alpha *. prices.(i)) +. ((1.0 -. alpha) *. !acc)
+      done;
+      !acc
+
   let rsi (prices : float array) (period : int) : float =
     let n = Array.length prices in
     if n <= period then 50.0
@@ -154,6 +165,21 @@ module MathEngine = struct
         let rs = avg_gain /. avg_loss in
         let raw_rsi = 100.0 -. (100.0 /. (1.0 +. rs)) in
         if Float.is_nan raw_rsi then 50.0 else max 0.0 (min 100.0 raw_rsi)
+
+  let atr (candles : candle array) (period : int) : float =
+    let n = Array.length candles in
+    if n <= period then 1.0
+    else
+      let sum_tr = ref 0.0 in
+      for i = n - period to n - 1 do
+        let c = candles.(i) in
+        let prev_c = candles.(i - 1).close in
+        let tr1 = c.high -. c.low in
+        let tr2 = abs_float (c.high -. prev_c) in
+        let tr3 = abs_float (c.low -. prev_c) in
+        sum_tr := !sum_tr +. max tr1 (max tr2 tr3)
+      done;
+      !sum_tr /. float_of_int period
 
   let extract_features (candles : candle array) (macro_sentiment : float) : feature_vector =
     let n = Array.length candles in
@@ -181,6 +207,7 @@ module MathEngine = struct
         macro_sentiment;
       }
 end
+
 
 
 (* -------------------------------------------------------------------------
